@@ -332,21 +332,13 @@ let print_tree tree =
 
 
 
-
-
-
-
-
-
-
-
 let () = printf "hello!!\n";;
 
 let () = Random.self_init () in
-let a_tree = train_tree "house.data"in
+let a_tree = train_tree "training.data" in
 print_tree a_tree;
-let perc = eval_tree a_tree "house.eval" in
+let perc = eval_tree a_tree "eval.data" in
 printf "Correct Percentage (tree) = %f\n" (perc *. 100.0);
 
-let perc = eval_forest (train_forest "house.data") "house.eval" in
+let perc = eval_forest (train_forest "training.data") "eval.data" in
 printf "Correct Percentage (forest) = %f\n" (perc *. 100.0);;
