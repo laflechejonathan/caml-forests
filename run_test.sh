@@ -1,14 +1,14 @@
 #!/bin/bash
 
-count=$(wc -l $1 | cut -f 1 -d ' ' )
-eval_count=$(expr $count / 10)
-train_count=$(expr $count - $eval_count)
+sort -R $1 > training.data.full
+split -a 1 -n l/5 -d training.data.full training.data
+mv training.data4 eval.data
 
-echo there are $count lines, $eval_count will go to eval, $train_count for training
-sort -R $1 > tmp_rand
-head -n $eval_count $1 > eval.data
-tail -n $train_count $1 > training.data
-rm tmp_rand
+count=$(wc -l eval.data | cut -f 1 -d ' ' )
+echo each training file has $count instances
 
-./a.out
+# ocamldebug `ocamlfind query -recursive -i-format batteries` -I _build/src/ ./main.d.byte
+./main.native
 dot -Tsvg tree.dot > render.svg
+
+rm training.data*
