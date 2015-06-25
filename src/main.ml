@@ -72,9 +72,10 @@ let eval_tree tree filename=
                     eval b (total + 1) correct_count in
     eval (parse_file filename) 0 0;;
 
-let print_tree tree =
-    let o = open_out "tree.dot" in
-    fprintf o "digraph Tree {\n\n";
+let fprintf_tree o tree tree_num =
+    let tree_name = sprintf "Tree%d" tree_num in
+    let node_prefix = sprintf "%s_Node" tree_name in
+    fprintf o "digraph %s {\n\n" tree_name;
     let rec do_print tree counter = 
         match tree with
             | Nil -> counter
@@ -83,25 +84,35 @@ let print_tree tree =
                         match n.cmp.actual_comparison with
                             | Discrete (cmp_value) -> sprintf "(%d) == %s" n.cmp.attribute_index cmp_value
                             | Continuous (threshold) -> sprintf "(%d) < %f" n.cmp.attribute_index threshold in
-                    fprintf o "Node%d [label=\"%s class=%s\"];\n" counter comparison_label n.likely_class;
+                    fprintf o "%s_%d [label=\"%s class=%s\"];\n" node_prefix counter comparison_label n.likely_class;
 
                     let new_counter = 
                         match n.true_child with
                             | Nil -> counter;
                             | Tree t -> 
                                 do_print n.true_child (counter + 1) in
-                    if new_counter > counter then fprintf o "Node%d -> Node%d [label=\"T\"]\n" counter (counter + 1);
+                    if new_counter > counter then fprintf o "%s_%d -> %s_%d [label=\"T\"]\n" node_prefix counter node_prefix (counter + 1);
                     
                     let newer_counter = 
                         match n.false_child with
                             | Nil -> new_counter;
                             | Tree t -> 
                                 do_print n.false_child (new_counter + 1) in
-                    if newer_counter > new_counter then fprintf o "Node%d -> Node%d [label=\"F\"];\n" counter (new_counter + 1); 
+                    if newer_counter > new_counter then fprintf o "%s_%d -> %s_%d [label=\"F\"];\n" node_prefix counter node_prefix (new_counter + 1); 
 
                     newer_counter in
     do_print tree 0;
-    fprintf o "}\n";
+    fprintf o "}\n";;
+
+let fprintf_forest forest =
+    let o = open_out "tree.dot" in
+
+    let rec print_forest forest tree_index =
+        match forest with
+            | [] -> ()
+            | hd::tl -> fprintf_tree o hd tree_index; fprintf o "\n\n// Tree Boundary\n\n"; print_forest tl (tree_index+  1) in
+
+    print_forest forest 0;
     close_out o;;
 
 let get_num_classes data_set =
@@ -109,14 +120,15 @@ let get_num_classes data_set =
     List.length classes;;
 
 
-let () = Random.self_init () in
-let a_tree = train_tree "training.data.full" in
-print_tree a_tree;
-let perc = eval_tree a_tree "eval.data" in
-printf "Correct Percentage (tree) = %f\n" (perc *. 100.0);
+(* let () = Random.self_init () in *)
+(* let a_tree = train_tree "training.data.full" in *)
+(* print_tree a_tree; *)
+(* let perc = eval_tree a_tree "eval.data" in *)
+(* printf "Correct Percentage (tree) = %f\n" (perc *. 100.0); *)
 
-let train_forest_files = List.map (fun n -> "training.data" ^ string_of_int(n)) (List.range 0 `To 3) in
-let training_data_sets = List.map(fun f -> parse_file f) train_forest_files in
-let num_classes = get_num_classes (List.hd training_data_sets) in
-let perc = eval_forest (train_forest training_data_sets) (parse_file "eval.data") num_classes in
+let training_data = parse_file "training.data" in
+let num_classes = get_num_classes training_data in
+let forest = train_forest training_data in
+fprintf_forest forest;
+let perc = eval_forest forest (parse_file "eval.data") num_classes in
 printf "Correct Percentage (forest) = %f\n" (perc *. 100.0);

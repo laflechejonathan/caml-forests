@@ -1,6 +1,7 @@
 open Types
 open Batteries
 open Random
+open Printf
 
 (* Decision Tree Classifier *)
 
@@ -16,7 +17,6 @@ type discrete_cmp_result =
     value : string;
 }
 
-
 (* binary decision tree *)
 type tree = 
     | Nil
@@ -29,6 +29,11 @@ type tree =
         likely_class: string;
     };;
 
+let get_comparison_label cmp =
+    match cmp.actual_comparison with
+        | Discrete (cmp_value) -> sprintf "(%d) == %s" cmp.attribute_index cmp_value
+        | Continuous (threshold) -> sprintf "(%d) < %f" cmp.attribute_index threshold;;
+
 let apply_comparison comparison attribute = 
     match comparison.actual_comparison with
         | Continuous (threshold) -> 
@@ -38,7 +43,7 @@ let apply_comparison comparison attribute =
         | Discrete (cmp_value) ->
                 (match attribute with
                     | Continuous _ -> raise (Failure "Discrete encountered - expected Continuous")
-                    | Discrete (value) -> value == cmp_value)
+                    | Discrete (value) -> value = cmp_value);;
 
 
 (* split list of classes based on a decison tree comparison *)
@@ -64,6 +69,13 @@ let get_most_popular_class set =
     let class_set = List.map (fun x -> x.class_id) set in 
     get_most_popular_float class_set;;
 
+
+let rec print_list something =
+    match something with
+    [] -> ()
+    | a::b -> (printf "fuck%s\n") a ; print_list b;;
+    printf "\n"
+
 (* 
  * Calculate the entropy of a list of class instances, where 
  * each element belongs to one class C_i, according to this
@@ -75,15 +87,30 @@ let get_most_popular_class set =
 let rec compute_entropy set =
    (* Get the sorted list of classes *)
    let class_set = List.map (fun x -> x.class_id) set in 
-   let sorted_set = List.sort compare class_set in
+   (* let sorted_set = List.sort compare class_set in *)
    
-   let class_counts = 
-       match sorted_set with 
-           | [] -> []
-           | hd::tl ->
-                 (* This code is mysterious to me *)
-                 let acc,x,c = List.fold_left (fun (acc,x,c) y -> if y = x then acc, x ,c+1 else c::acc, y,1) ([],hd,1) tl in
-                 c::acc in
+   (* let class_counts = *) 
+   (*     match sorted_set with *) 
+   (*         | [] -> [] *)
+   (*         | hd::tl -> *)
+   (*               (1* This code is mysterious to me *1) *)
+   (*               let acc,x,c = List.fold_left (fun (acc,x,c) y -> if y = x then acc, x ,c+1 else c::acc, y,1) ([],hd,1) tl in *)
+   (*               c::acc in *)
+
+
+   let class_counts = List.map List.length (List.group compare class_set) in
+
+   (* printf "original class_counts: "; print_list (List.map string_of_int class_counts); *)
+   (* printf "new class_counts: "; print_list (List.map string_of_int class_counts2); *)
+
+   (* let inner_computations = List.map (fun x -> (float_of_int x) *. log (float_of_int x)) class_counts in *)
+   (* (1* printf "inner computation\n"; print_list (List.map string_of_float inner_computations); *1) *)
+   (* let rec sum acc computations = *)
+   (*     match computations with *)
+   (*          | [] -> acc *)
+   (*          | hd::tl -> sum (hd) tl in *)
+   (* abs_float (sum 0.0 inner_computations);; *)
+
    let rec sum_entropy classes acc =
        match classes with
            | [] -> acc
@@ -115,7 +142,6 @@ let find_optimal_split_continuous set attribute =
 
     let min = List.fold_left (fun x y -> if x < y then x else y) (List.hd attribute_values) attribute_values in
     let max = List.fold_left (fun x y -> if x > y then x else y) (List.hd attribute_values) attribute_values in
-    let mid = (max -. min) /. 2.0 +. min in
 
     let is_low_better low high =
         let entropy_low = compute_entropy_for_cmp set { actual_comparison = (Continuous low); attribute_index = attribute } in
@@ -129,7 +155,7 @@ let find_optimal_split_continuous set attribute =
         else (if (is_low_better low high) 
                     then find_optimal_thresh low (low +. (high -. low) /. 2.0) 
                     else find_optimal_thresh (low +. (high -. low) /. 2.0) high) in
-    let cmp = find_optimal_thresh mid max in
+    let cmp = find_optimal_thresh min max in
     cmp;;
 
 let find_optimal_split_discrete set attribute = 
@@ -140,13 +166,14 @@ let find_optimal_split_discrete set attribute =
             | Continuous (value) -> raise (Failure "Continuous encountered where it shouldn't be.") in
     let attribute_values = List.map unpack_attr_values set in
 
-    let groups = List.group compare attribute_values in
     let eval_discrete_group group = 
         let value = List.hd group in
         let entropy = compute_entropy_for_cmp set { attribute_index = attribute; actual_comparison = (Discrete value) } in
         {entropy = entropy; value = value} in
-        
+
+    let groups = List.group compare attribute_values in
     let sorted_cmp_results = List.sort (fun x y  -> compare x.entropy y.entropy) (List.map eval_discrete_group groups) in
+    (* List.map (fun x -> printf "Result with index %d, cmp_value: %s had entropy %f\n" attribute x.value x.entropy) sorted_cmp_results; *)
     let best_cmp_value = (List.hd sorted_cmp_results).value in
     { attribute_index = attribute; actual_comparison = (Discrete best_cmp_value) };;
 
@@ -166,7 +193,7 @@ let find_optimal_split set attribute =
  *)
 let find_best_possible_split set =
     let num_attributes = List.length (List.hd set).attributes in
-    let attributes = List.range 0 `To num_attributes in
+    let attributes = List.range 0 `To (num_attributes - 1) in
     let splits = List.map (fun x -> find_optimal_split set x) attributes in
     List.fold_left (fun x y -> if (compute_entropy_for_cmp set x < compute_entropy_for_cmp set y) then x else y) (List.hd splits) splits;;
 
@@ -211,11 +238,14 @@ let classify tree_node attributes =
 let train_decision_tree set =
     let rec do_train_decision_tree depth set =
         let curr_entropy = compute_entropy set in
+        (* printf "Current entropy: %f\n" curr_entropy; *)
         if curr_entropy = 0.0 || depth >= 8 || List.length set <= 1 then Nil else
             (* Construct decison tree node *) 
             let best_cmp = find_best_possible_split_with_randomness set in
             let true_set, false_set = split_data_set set best_cmp in
             let likely_class = get_most_popular_class set in
+
+            (* printf "Chose comparison: %s\n" (get_comparison_label best_cmp); *)
 
             (* recurse *)
             let true_child = 
